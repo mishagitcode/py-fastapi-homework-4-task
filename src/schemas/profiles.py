@@ -3,6 +3,7 @@ from datetime import date
 from fastapi import UploadFile, Form, File
 from pydantic import BaseModel, field_validator
 
+from database.models.accounts import GenderEnum
 from validation import (
     validate_name,
     validate_image,
@@ -26,22 +27,18 @@ class ProfileCreateSchema(BaseModel):
     @field_validator("first_name", "last_name")
     @classmethod
     def validate_profile_name(cls, value: str) -> str:
-        normalized_value = value.strip().lower()
-        validate_name(normalized_value)
+        stripped_value = value.strip()
+        validate_name(stripped_value)
+        normalized_value = stripped_value.lower()
         return normalized_value
 
     @field_validator("gender")
     @classmethod
     def validate_profile_gender(cls, value: str) -> str:
-        try:
-            validate_gender(value)
-        except ValueError:
-            from database.models.accounts import GenderEnum
+        if value not in {gender.value for gender in GenderEnum}:
+            raise ValueError(f"Gender must be one of: {', '.join(gender.value for gender in GenderEnum)}")
 
-            try:
-                validate_gender(GenderEnum(value))
-            except ValueError as error:
-                raise ValueError(str(error)) from error
+        validate_gender(GenderEnum(value))
         return value
 
     @field_validator("date_of_birth")
