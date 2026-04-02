@@ -1,10 +1,12 @@
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
+from pydantic import ValidationError
 
 from config import get_jwt_auth_manager, get_s3_storage_client
 from database import get_db, UserModel, UserGroupEnum, UserProfileModel
@@ -25,7 +27,6 @@ router = APIRouter()
 async def create_user_profile(
     user_id: int,
     request: Request,
-    profile_data: ProfileCreateSchema = Depends(ProfileCreateSchema.as_form),
     db: AsyncSession = Depends(get_db),
     jwt_manager: JWTAuthManagerInterface = Depends(get_jwt_auth_manager),
     s3_client: S3StorageInterface = Depends(get_s3_storage_client)
@@ -79,6 +80,19 @@ async def create_user_profile(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User already has a profile."
         )
+
+    form_data = await request.form()
+    try:
+        profile_data = ProfileCreateSchema(
+            first_name=form_data.get("first_name"),
+            last_name=form_data.get("last_name"),
+            gender=form_data.get("gender"),
+            date_of_birth=form_data.get("date_of_birth"),
+            info=form_data.get("info"),
+            avatar=form_data.get("avatar")
+        )
+    except ValidationError as error:
+        raise RequestValidationError(error.errors()) from error
 
     avatar_bytes = await profile_data.avatar.read()
     avatar_suffix = Path(profile_data.avatar.filename or "avatar.jpg").suffix.lower() or ".jpg"
