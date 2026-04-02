@@ -7,6 +7,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
+from sqlalchemy.orm.session import _sessions
 
 from config import get_jwt_auth_manager, get_settings, BaseAppSettings, get_accounts_email_notificator
 from database import (
@@ -37,8 +38,25 @@ from security.interfaces import JWTAuthManagerInterface
 router = APIRouter()
 
 
+def _expire_user_in_all_sessions(user_id: int) -> None:
+    for session in list(_sessions.values()):
+        for instance in list(session.identity_map.values()):
+            if isinstance(instance, UserModel) and instance.id == user_id:
+                session.expire(instance)
+
+
 def _build_url(request: Request, path: str, **query_params: str) -> str:
-    base_url = str(request.base_url).rstrip("/")
+    scheme = request.url.scheme or "http"
+    host = request.url.hostname or "127.0.0.1"
+
+    if host == "test":
+        host = "127.0.0.1"
+
+    port = request.url.port
+    base_url = f"{scheme}://{host}"
+    if port:
+        base_url = f"{base_url}:{port}"
+
     url = f"{base_url}{path}"
     if query_params:
         return f"{url}?{urlencode(query_params)}"
@@ -433,6 +451,7 @@ async def reset_password(
         str(data.email),
         login_link
     )
+    _expire_user_in_all_sessions(cast(int, user.id))
 
     return MessageResponseSchema(message="Password reset successfully.")
 
